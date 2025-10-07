@@ -29,6 +29,9 @@ from torch import Tensor
 from PIL import Image
 from torch.utils.data import Dataset
 
+import random
+import torchvision.transforms.functional as TF
+
 
 def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
     assert subset in ['train', 'val', 'test']
@@ -48,7 +51,7 @@ def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
 
     return list(zip(images, full_labels))
 
-
+"""
 class SliceDataset(Dataset):
     def __init__(self, subset, root_dir, img_transform=None,
                  gt_transform=None, augment=False, equalize=False, debug=False):
@@ -87,3 +90,49 @@ class SliceDataset(Dataset):
             data_dict["gts"] = gt
 
         return data_dict
+"""
+
+class SliceDataset(Dataset):
+    def __init__(self, subset, root_dir, img_transform=None,
+                 gt_transform=None, augment=False, equalize=False, debug=False):
+        self.root_dir = root_dir
+        self.img_transform = img_transform
+        self.gt_transform = gt_transform
+        self.augmentation = augment
+        self.equalize = equalize
+        self.test_mode = subset == 'test'
+
+        self.files = make_dataset(root_dir, subset)
+        if debug:
+            self.files = self.files[:10]
+        print(f">> Created {subset} dataset with {len(self)} images...")
+
+    def __len__(self):
+        return len(self.files)
+
+
+    def __getitem__(self, index):
+        img_path, gt_path = self.files[index]
+        img = Image.open(img_path).convert("L")
+        gt = Image.open(gt_path).convert("L") if not self.test_mode else None
+
+        if self.augmentation and not self.test_mode:
+            if random.random() > 0.8:
+                img = TF.hflip(img)
+                gt = TF.hflip(gt)
+            if random.random() > 0.8:
+                img = TF.vflip(img)
+                gt = TF.vflip(gt)
+            angle = random.uniform(-10, 10)
+            img = TF.rotate(img, angle)
+            gt = TF.rotate(gt, angle)
+
+        img = self.img_transform(img)
+        data_dict = {"images": img, "stems": img_path.stem}
+
+        if not self.test_mode:
+            gt = self.gt_transform(gt)
+            data_dict["gts"] = gt
+
+        return data_dict
+
