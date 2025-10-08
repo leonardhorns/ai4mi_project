@@ -21,8 +21,8 @@ def main(args):
 
         pred_path = src_folder / patient_file
 
-        pred = nib.load(pred_path)
-        pred = np.asarray(pred.dataobj)
+        pred_nib = nib.load(pred_path)
+        pred = np.asarray(pred_nib.dataobj)
 
         config = {
             'cca': True,
@@ -32,9 +32,9 @@ def main(args):
 
         nib.save(
             nib.Nifti1Image(processed_pred,
-                            header=pred.header,
-                            affine=pred.affine,
-                            dtype=pred.get_data_dtype()),
+                            header=pred_nib.header,
+                            affine=pred_nib.affine,
+                            dtype=pred_nib.get_data_dtype()),
             (dest_folder / patient_file)
         )
 
