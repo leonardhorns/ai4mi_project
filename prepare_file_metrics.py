@@ -22,7 +22,7 @@ def main(args):
     for patient in os.listdir(src_folder):
         if patient not in patient_id:
             continue
-        if not (dest_folder_gt / f'{patient}.nii.gz').exists():
+        if (dest_folder_gt / f'{patient}.nii.gz').exists():
             continue
         os.symlink(src_folder / patient / 'GT.nii.gz', dest_folder_gt / f'{patient}.nii.gz')
 
