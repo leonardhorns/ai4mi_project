@@ -7,16 +7,6 @@ def postprocess(volume, config):
     if not isinstance(volume, np.ndarray):
         volume = volume.cpu().numpy()
 
-    if config.get('fill_holes', False):
-        filled_volume = np.zeros_like(volume)
-
-        for cls in range(1, volume.max() + 1):
-            mask = (volume == cls)
-            mask_filled = binary_fill_holes(mask)
-            filled_volume[mask_filled] = cls
-
-        volume = filled_volume
-
     if config.get('cca', False):
         connected_components = get_connected_components(volume)
         final_volume = np.zeros_like(volume)
@@ -35,6 +25,16 @@ def postprocess(volume, config):
             final_volume[mask] = c
 
         volume = final_volume
+
+    if config.get('fill_holes', False):
+        filled_volume = np.zeros_like(volume)
+
+        for cls in range(1, volume.max() + 1):
+            mask = (volume == cls)
+            mask_filled = binary_fill_holes(mask)
+            filled_volume[mask_filled] = cls
+
+        volume = filled_volume
 
     return volume
 
