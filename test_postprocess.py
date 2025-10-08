@@ -26,7 +26,8 @@ def main(args):
 
         config = {
             'cca': True,
-            'cca_threshold': threshold
+            'cca_threshold': threshold,
+            'fill_holes': True
         }
         processed_pred = postprocess(pred, config)
 
