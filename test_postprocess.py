@@ -48,6 +48,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--dest_folder', type=Path, required=True)
     parser.add_argument('--threshold', type=int, required=False)
     parser.add_argument('--connectivity', type=int, required=False)
+    parser.add_argument('--radius', type=int, required=False)
 
     args = parser.parse_args()
 

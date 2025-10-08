@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.ndimage import label, binary_fill_holes, generate_binary_structure
+from scipy.ndimage import label, binary_fill_holes, generate_binary_structure, iterate_structure
 
 
 def postprocess(volume, config):
@@ -29,6 +29,7 @@ def postprocess(volume, config):
     if config.get('fill_holes', False):
         filled_volume = np.zeros_like(volume)
         structure = generate_binary_structure(len(volume.shape), config.get('connectivity', 1))
+        structure = iterate_structure(structure, config.get('radius', 1))
         for cls in range(1, volume.max() + 1):
             mask = (volume == cls)
             mask_filled = binary_fill_holes(mask, structure=structure)
