@@ -25,7 +25,7 @@ def main(args):
         pred = np.asarray(pred_nib.dataobj)
 
         config = {
-            'cca': True,
+            'cca': False,
             'cca_threshold': threshold,
             'fill_holes': True
         }
@@ -43,7 +43,8 @@ def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='File path parameters')
     parser.add_argument('--src_folder', type=Path, required=True)
     parser.add_argument('--dest_folder', type=Path, required=True)
-    parser.add_argument('--threshold', type=int, required=True)
+    parser.add_argument('--threshold', type=int, required=False)
+    parser.add_argument('--connectivity', type=int, required=False)
 
     args = parser.parse_args()
 
