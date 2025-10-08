@@ -28,7 +28,7 @@ def main(args):
     for patient_file in os.listdir(src_folder):
         if not patient_file.endswith('.nii.gz'):
             continue
-
+        print(f'Processing {patient_file}')
         pred_path = src_folder / patient_file
 
         pred_nib = nib.load(pred_path)
