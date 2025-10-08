@@ -49,6 +49,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--threshold', type=int, required=False)
     parser.add_argument('--connectivity', type=int, required=False)
     parser.add_argument('--radius', type=int, required=False)
+    parser.add_argument('--ignore_classes_fill_holes', type=int, nargs='+', required=False, default=[])
+    parser.add_argument('--ignore_classes_cca', type=int, nargs='+', required=False, default=[])
 
     args = parser.parse_args()
 
