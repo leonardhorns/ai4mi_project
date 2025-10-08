@@ -24,7 +24,7 @@ def main(args):
             continue
         if (dest_folder_gt / f'{patient}.nii.gz').exists():
             continue
-        os.symlink(src_folder / patient / 'GT.nii.gz', dest_folder_gt / f'{patient}.nii.gz')
+        os.symlink((src_folder / patient / 'GT.nii.gz').resolve(), dest_folder_gt / f'{patient}.nii.gz')
 
     args.dest_folder = args.dest_folder_val
     stitch.main(args)
