@@ -12,6 +12,9 @@ def postprocess(volume, config):
         final_volume = np.zeros_like(volume)
 
         for c, labeled in connected_components.items():
+            if c in config.get('ignore_classes_cca', []):
+                final_volume[volume == c] = c
+                continue
             components_size = np.bincount(labeled.flatten())
             if c in config['cca_threshold']:
                 #for esophagus pick size > 500
@@ -31,6 +34,10 @@ def postprocess(volume, config):
         structure = generate_binary_structure(len(volume.shape), config.get('connectivity', 1))
         structure = iterate_structure(structure, config.get('radius', 1))
         for cls in range(1, volume.max() + 1):
+            if cls in config.get('ignore_classes_fill_holes', []):
+                filled_volume[volume == cls] = cls
+                continue
+
             mask = (volume == cls)
             mask_filled = binary_fill_holes(mask, structure=structure)
             filled_volume[mask_filled] = cls
