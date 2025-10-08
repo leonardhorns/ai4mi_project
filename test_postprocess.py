@@ -38,6 +38,10 @@ def main(args):
             'cca': args.cca,
             'cca_threshold': threshold,
             'fill_holes': args.fill_holes,
+            'ignore_classes_fill_holes': args.ignore_classes_fill_holes,
+            'ignore_classes_cca': args.ignore_classes_cca,
+            'connectivity': args.connectivity if args.connectivity is not None else 1,
+            'radius': args.radius if args.radius is not None else 1
         }
         processed_pred = postprocess(pred, config)
 
