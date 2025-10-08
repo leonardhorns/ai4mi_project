@@ -1,13 +1,21 @@
 import numpy as np
-import nibabel as nib
+from scipy.ndimage import label, binary_fill_holes
 
-from pathlib import Path
-from scipy.ndimage import label
 
 def postprocess(volume, config):
 
     if not isinstance(volume, np.ndarray):
         volume = volume.cpu().numpy()
+
+    if config.get('fill_holes', False):
+        filled_volume = np.zeros_like(volume)
+
+        for cls in range(1, volume.max() + 1):
+            mask = (volume == cls)
+            mask_filled = binary_fill_holes(mask)
+            filled_volume[mask_filled] = cls
+
+        volume = filled_volume
 
     if config.get('cca', False):
         connected_components = get_connected_components(volume)
