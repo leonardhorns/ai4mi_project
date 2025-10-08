@@ -35,9 +35,9 @@ def main(args):
         pred = np.asarray(pred_nib.dataobj)
 
         config = {
-            'cca': True,
+            'cca': args.cca,
             'cca_threshold': threshold,
-            'fill_holes': True
+            'fill_holes': args.fill_holes,
         }
         processed_pred = postprocess(pred, config)
 
@@ -58,6 +58,8 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--radius', type=int, required=False)
     parser.add_argument('--ignore_classes_fill_holes', type=int, nargs='+', required=False, default=[])
     parser.add_argument('--ignore_classes_cca', type=int, nargs='+', required=False, default=[])
+    parser.add_argument('--cca', action='store_true', default=False, required=False)
+    parser.add_argument('--fill_holes', action='store_true', default=False, required=False)
 
     args = parser.parse_args()
 
