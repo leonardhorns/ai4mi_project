@@ -5,14 +5,21 @@ import nibabel as nib
 import numpy as np
 from postprocessing import postprocess
 
-thresholds = [0, 20, 100, 500, 1000, 2000]
-
 def main(args):
 
     src_folder = args.src_folder
     dest_folder = args.dest_folder
     if args.threshold is not None:
-        threshold = {cls: args.threshold for cls in range(1, 5) if args.threshold > 0}
+        if args.threshold == - 1:
+            threshold = {
+                3: 20,
+                4: 20
+            }
+        else:
+            threshold = {
+                cls: args.threshold
+                for cls in range(1, 5) if args.threshold > 0
+            }
     else:
         threshold = None
 
@@ -28,7 +35,7 @@ def main(args):
         pred = np.asarray(pred_nib.dataobj)
 
         config = {
-            'cca': False,
+            'cca': True,
             'cca_threshold': threshold,
             'fill_holes': True
         }
