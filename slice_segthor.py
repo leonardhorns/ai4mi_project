@@ -39,8 +39,13 @@ from skimage.transform import resize
 from utils import map_, tqdm_
 
 
-def norm_arr(img: np.ndarray) -> np.ndarray:
+def norm_arr(img: np.ndarray, min_clip=None, max_clip=None) -> np.ndarray:
+    min_clip = min_clip or img.min()
+    max_clip = max_clip or img.max()
+    
     casted = img.astype(np.float32)
+    casted = np.clip(casted, min_clip, max_clip)
+    
     shifted = casted - casted.min()
     norm = shifted / shifted.max()
     res = 255 * norm
@@ -103,7 +108,7 @@ def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int
     else:
         gt = np.zeros_like(ct, dtype=np.uint8)
 
-    norm_ct: np.ndarray = norm_arr(ct)
+    norm_ct: np.ndarray = norm_arr(ct, min_clip=-1000, max_clip=1000)
 
     to_slice_ct = norm_ct
     to_slice_gt = gt
