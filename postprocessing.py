@@ -48,6 +48,7 @@ def postprocess(volume, config):
             mask_filled = binary_fill_holes(mask, structure=structure)
             filled_volume[mask_filled] = cls
 
+        print(f'Check equal {np.array_equal(volume, filled_volume)}')
         volume = filled_volume
 
     return volume
