@@ -105,7 +105,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
     scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
     # Dataset part
-    B: int = datasets_params[args.dataset]['B']
+    B: int = args.batch_size or datasets_params[args.dataset]['B']
     root_dir = Path("data") / args.dataset
     if args.view != 'axial':
         root_dir /= args.view
@@ -289,6 +289,7 @@ def main():
     parser.add_argument('--augment', action='store_true',help="Enable data augmentation during training.")
     parser.add_argument('--2.5D', action='store_true', dest='multi_view',
                         help="Train separate 2D networks for each view (axial, coronal, sagittal).")
+    parser.add_argument('--batch_size', type=int)
 
 
     # arguments related to loss functions/optimizers
