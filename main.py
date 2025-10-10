@@ -235,8 +235,9 @@ def runTraining(args):
                                         data['stems'],
                                         args.dest / f"iter{e:03d}" / m)
                             for b in range(B):
-                                torch.save(pred_probs[b],
-                                           args.dest / f"iter{e:03d}" / f"{m}_probs" / f"{data['stems'][b]}.pt")
+                                path = args.dest / f"iter{e:03d}" / f"{m}_probs" / f"{data['stems'][b]}.npy"
+                                path.parent.mkdir(parents=True, exist_ok=True)
+                                np.save(path, pred_probs[b].cpu().numpy())
 
                     j += B  # Keep in mind that _in theory_, each batch might have a different size
                     # For the DSC average: do not take the background class (0) into account:
