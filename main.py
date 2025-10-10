@@ -271,6 +271,7 @@ def runTraining(args):
 
             torch.save(net, args.dest / "bestmodel.pkl")
             torch.save(net.state_dict(), args.dest / "bestweights.pt")
+        rmtree(args.dest / f"iter{e:03d}" / "val_probs")
 
 
 def main():
