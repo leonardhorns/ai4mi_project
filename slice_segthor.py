@@ -40,8 +40,10 @@ from utils import map_, tqdm_
 
 
 def norm_arr(img: np.ndarray, min_clip=None, max_clip=None) -> np.ndarray:
-    min_clip = min_clip or img.min()
-    max_clip = max_clip or img.max()
+    if min_clip is None:
+        min_clip = img.min()
+    if max_clip is None:
+        max_clip = img.max()
     
     casted = img.astype(np.float32)
     casted = np.clip(casted, min_clip, max_clip)
