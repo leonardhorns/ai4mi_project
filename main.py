@@ -107,7 +107,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
     # Dataset part
     B: int = datasets_params[args.dataset]['B']
     root_dir = Path("data") / args.dataset
-
+    if args.view != 'axial':
+        root_dir /= args.view
 
 
     train_set = SliceDataset('train',
@@ -115,7 +116,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
                              img_transform=img_transform,
                              gt_transform= partial(gt_transform, K),
                              augment = args.augment,
-                             debug=args.debug)
+                             debug=args.debug,
+                             use_every=3 if args.view != 'axial' else 1)
     train_loader = DataLoader(train_set,
                               batch_size=B,
                               num_workers=5,
@@ -126,7 +128,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
                            img_transform=img_transform,
                            gt_transform=partial(gt_transform, K),
                            augment = False,
-                           debug=args.debug)
+                           debug=args.debug,
+                           use_every=1)
     val_loader = DataLoader(val_set,
                             batch_size=B,
                             num_workers=5,
@@ -280,6 +283,8 @@ def main():
                         help="Keep only a fraction (10 samples) of the datasets, "
                              "to test the logics around epochs and logging easily.")
     parser.add_argument('--augment', action='store_true',help="Enable data augmentation during training.")
+    parser.add_argument('--2.5D', action='store_true', dest='multi_view',
+                        help="Train separate 2D networks for each view (axial, coronal, sagittal).")
 
 
     # arguments related to loss functions/optimizers
@@ -288,11 +293,25 @@ def main():
     parser.add_argument('--optimizer', default='Adam', choices=['Adam', 'SGD', 'AdamW', 'SGDm'])
     parser.add_argument('--scheduler', default=False, type=bool)
     args = parser.parse_args()
-
     pprint(args)
 
+    args.view = 'axial'  # Default view
     runTraining(args)
 
+    if args.multi_view:
+        base_dest = args.dest
+
+        print(">>> Training sagittal view")
+        args.view = 'sagittal'
+        args.dest = base_dest.with_name(f"{base_dest.name}_{args.view}")
+        print("Saving to", args.dest)
+        runTraining(args)
+
+        print(">>> Training coronal view")
+        args.view = 'coronal'
+        args.dest = base_dest.with_name(f"{base_dest.name}_{args.view}")
+        print("Saving to", args.dest)
+        runTraining(args)
 
 if __name__ == '__main__':
     main()
