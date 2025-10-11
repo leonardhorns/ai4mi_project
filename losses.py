@@ -158,8 +158,7 @@ class FocalLoss:
 
         B, K, W, H = pred_softmax.shape
 
-        # log probabilities (avoid log(0))
-        log_p = (pred_softmax + self.eps).log()
+        log_p = torch.clamp(pred_softmax, min=self.eps).log()
 
         # focal term: (1 - p_t)^gamma
         focal_weight = (1.0 - pred_softmax) ** self.gamma
@@ -216,6 +215,36 @@ class ComboLoss3:
 
         self.loss1 = FocalLoss(**kwargs)
         self.loss2 = DiceLoss()
+
+    def __call__(self, pred_softmax, weak_target):
+        assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+        task1 = self.loss1(pred_softmax, weak_target)
+        task2 = self.loss2(pred_softmax, weak_target)
+
+        return self.alpha * task1 + (1 - self.alpha) * task2
+
+
+class ComboLoss4:
+    def __init__(self, alpha=0.5, **kwargs):
+        self.alpha = alpha
+
+        self.loss1 = CrossEntropy(**kwargs)
+        self.loss2 = GeneralizedDiceLoss()
+
+    def __call__(self, pred_softmax, weak_target):
+        assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+        task1 = self.loss1(pred_softmax, weak_target)
+        task2 = self.loss2(pred_softmax, weak_target)
+
+        return self.alpha * task1 + (1 - self.alpha) * task2
+
+
+class ComboLoss5:
+    def __init__(self, alpha=0.5, **kwargs):
+        self.alpha = alpha
+
+        self.loss1 = FocalLoss(**kwargs)
+        self.loss2 = GeneralizedDiceLoss()
 
     def __call__(self, pred_softmax, weak_target):
         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
