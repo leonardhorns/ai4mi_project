@@ -123,12 +123,12 @@ class GeneralizedDiceLoss:
         assert pred_softmax.shape == target_onehot.shape
         B, K, W, H = pred_softmax.shape
 
-        p = pred_softmax.view(B, K, -1)
-        g = target_onehot.view(B, K, -1)
+        p = pred_softmax.reshape(B, K, -1)
+        g = target_onehot.reshape(B, K, -1)
 
-        class_volumes = g.sum(dim=2)  # shape (B, K)
-
+        class_volumes = g.sum(dim=2)  # (B, K)
         weights = 1.0 / (class_volumes ** 2 + self.smooth)
+        weights = weights / (weights.sum(dim=1, keepdim=True) + self.smooth)
 
         intersection = (p * g).sum(dim=2)
         denominator = (p + g).sum(dim=2)
@@ -137,7 +137,6 @@ class GeneralizedDiceLoss:
         denom = (weights * denominator).sum(dim=1)
 
         dice = (numerator + self.smooth) / (denom + self.smooth)
-
         loss = 1.0 - dice.mean()
         return loss
 

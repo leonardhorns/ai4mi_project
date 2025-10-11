@@ -102,7 +102,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
         case 'SGDm':
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, nesterov=False)
 
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
     # Dataset part
     B: int = datasets_params[args.dataset]['B']
