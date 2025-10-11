@@ -51,7 +51,8 @@ from utils import (Dcm,
                    dice_coef,
                    save_images)
 
-from losses import (CrossEntropy, DiceLoss, DiceLoss2, GeneralizedDiceLoss, FocalLoss, ComboLoss1)
+from losses import (CrossEntropy, DiceLoss, DiceLoss2, GeneralizedDiceLoss, FocalLoss, ComboLoss1, ComboLoss4,
+                    ComboLoss5)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -163,6 +164,10 @@ def runTraining(args):
             loss_fn = ComboLoss1(idk=list(range(K)))
         case 'C3':
             loss_fn = ComboLoss1(idk=list(range(K)))
+        case 'C4':
+            loss_fn = ComboLoss4(idk=list(range(K)))
+        case 'C5':
+            loss_fn = ComboLoss5(idk=list(range(K)))
 
 
     # Notice one has the length of the _loader_, and the other one of the _dataset_
@@ -281,7 +286,7 @@ def main():
 
     # arguments related to loss functions/optimizers
     parser.add_argument('--lr', default=0.0005, type=float)
-    parser.add_argument('--loss', default='CE', choices=['CE', 'DICE', 'DICE2', 'GENDICE', 'FOCAL', 'C1', 'C2', 'C3'])
+    parser.add_argument('--loss', default='CE', choices=['CE', 'DICE', 'DICE2', 'GENDICE', 'FOCAL', 'C1', 'C2', 'C3', 'C4', 'C5'])
     parser.add_argument('--optimizer', default='Adam', choices=['Adam', 'SGD', 'AdamW', 'SGDm'])
     parser.add_argument('--scheduler', default=False, type=bool)
     args = parser.parse_args()
