@@ -33,7 +33,7 @@ import random
 import torchvision.transforms.functional as TF
 
 
-def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
+def make_dataset(root, subset, use_every: int = 1) -> list[tuple[Path, Path | None]]:
     assert subset in ['train', 'val', 'test']
 
     root = Path(root)
@@ -49,7 +49,7 @@ def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
     else:
         full_labels = [None] * len(images)
 
-    return list(zip(images, full_labels))
+    return list(zip(images, full_labels))[::use_every]
 
 class SliceDataset(Dataset):
     """
@@ -59,7 +59,7 @@ class SliceDataset(Dataset):
         * Last  N indices -> augmented copies
     """
     def __init__(self, subset, root_dir, img_transform=None,
-                 gt_transform=None, augment=False, equalize=False, debug=False):
+                 gt_transform=None, augment=False, equalize=False, debug=False, use_every: int = 1):
         self.root_dir: str = root_dir
         self.img_transform: Callable = img_transform
         self.gt_transform: Callable = gt_transform
@@ -68,7 +68,7 @@ class SliceDataset(Dataset):
 
         self.test_mode: bool = subset == 'test'
 
-        self.files = make_dataset(root_dir, subset)
+        self.files = make_dataset(root_dir, subset, use_every=use_every)
         if debug:
             self.files = self.files[:10]
 
