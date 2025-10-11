@@ -26,8 +26,11 @@ from pathlib import Path
 from typing import Callable, Union
 
 from torch import Tensor
-from PIL import Image
+from PIL import Image, ImageFilter
 from torch.utils.data import Dataset
+
+import random
+import torchvision.transforms.functional as TF
 
 
 def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
@@ -48,8 +51,13 @@ def make_dataset(root, subset) -> list[tuple[Path, Path | None]]:
 
     return list(zip(images, full_labels))
 
-
 class SliceDataset(Dataset):
+    """
+    - If augment=True and subset in {'train','val'}:
+        * __len__ returns 2 * N  (N = #files)
+        * First N indices -> original samples
+        * Last  N indices -> augmented copies
+    """
     def __init__(self, subset, root_dir, img_transform=None,
                  gt_transform=None, augment=False, equalize=False, debug=False):
         self.root_dir: str = root_dir
@@ -67,23 +75,69 @@ class SliceDataset(Dataset):
         print(f">> Created {subset} dataset with {len(self)} images...")
 
     def __len__(self):
-        return len(self.files)
+        # In test mode or when augmentation is disabled, length is unchanged
+        if self.test_mode or not self.augmentation:
+            return len(self.files)
+        # In train/val with augmentation enabled, double the virtual length
+        return 2 * len(self.files)
 
-    def __getitem__(self, index) -> dict[str, Union[Tensor, int, str]]:
-        img_path, gt_path = self.files[index]
+    def _apply_aug(self, img_pil: Image.Image, gt_pil: Image.Image) -> tuple[Image.Image, Image.Image]:
+        # Horizontal flip (30%)
+        if random.random() < 0.3:
+            img_pil = TF.hflip(img_pil)
+            gt_pil = TF.hflip(gt_pil)
 
-        img: Tensor = self.img_transform(Image.open(img_path))
+        # Vertical flip (30%)
+        if random.random() < 0.3:
+            img_pil = TF.vflip(img_pil)
+            gt_pil = TF.vflip(gt_pil)
 
-        data_dict = {"images": img,
-                     "stems": img_path.stem}
+        # Small rotation (always when augmenting)
+        angle = random.uniform(-10, 10)
+        img_pil = TF.rotate(img_pil, angle)
+        gt_pil = TF.rotate(gt_pil, angle)
+
+        # Gaussian Blur (40%)
+        if random.random() < 0.4:
+            sigma = random.uniform(0.3, 1.2)
+            img_pil = img_pil.filter(ImageFilter.GaussianBlur(radius=sigma))
+        
+        # Add contrast (20%)
+        if random.random() < 0.2:
+            factor = random.uniform(0.8, 1.2) # factor <1 lowers, >1 raises contrast
+            img_pil = TF.adjust_contrast(img_pil, factor)
+
+        # Add brightness (20%)
+        if random.random() < 0.2:
+            factor = random.uniform(0.8, 1.2) # factor <1 darker, >1 brighter
+            img_pil = TF.adjust_brightness(img_pil, factor)
+
+        return img_pil, gt_pil
+
+    def __getitem__(self, index):
+        base_len = len(self.files)
+        is_augmented_view = False
+        base_index = index
+
+        if not self.test_mode and self.augmentation:
+            # First half: originals [0, base_len)
+            # Second half: augmented copies [base_len, 2*base_len)
+            if index >= base_len:
+                is_augmented_view = True
+                base_index = index - base_len
+
+        img_path, gt_path = self.files[base_index]
+        img_pil = Image.open(img_path).convert("L")
+        gt_pil = Image.open(gt_path).convert("L") if not self.test_mode else None
+
+        if is_augmented_view and not self.test_mode:
+            img_pil, gt_pil = self._apply_aug(img_pil, gt_pil)
+
+        img: Tensor = self.img_transform(img_pil)
+        data_dict = {"images": img, "stems": img_path.stem}
 
         if not self.test_mode:
-            gt: Tensor = self.gt_transform(Image.open(gt_path))
-
-            _, W, H = img.shape
-            K, _, _ = gt.shape
-            assert gt.shape == (K, W, H)
-
+            gt: Tensor = self.gt_transform(gt_pil)
             data_dict["gts"] = gt
 
         return data_dict
