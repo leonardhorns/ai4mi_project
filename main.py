@@ -36,7 +36,7 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from torchvision import transforms
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, ConstantLR, CyclicLR
 
 from functools import partial 
 
@@ -102,7 +102,13 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
         case 'SGDm':
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, nesterov=False)
 
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+    match args.scheduler:
+        case 'constant':
+            scheduler = ConstantLR(optimizer=optimizer, factor=1)  # Dummy scheduler, does nothing
+        case 'cyclic':
+            scheduler = CyclicLR(optimizer, base_lr=lr/10, max_lr=lr*4, step_size_up=1600, mode='triangular2')
+        case 'plateau':
+            scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
     # Dataset part
     B: int = args.batch_size or datasets_params[args.dataset]['B']
@@ -179,6 +185,7 @@ def runTraining(args):
     log_dice_tra: Tensor = torch.zeros((args.epochs, len(train_loader.dataset), K))
     log_loss_val: Tensor = torch.zeros((args.epochs, len(val_loader)))
     log_dice_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset), K))
+    log_lr: Tensor = torch.zeros((args.epochs, len(train_loader)))
 
     best_dice: float = 0
 
@@ -226,11 +233,12 @@ def runTraining(args):
                     loss = loss_fn(pred_probs, gt)
                     log_loss[e, i] = loss.item()  # One loss value per batch (averaged in the loss)
 
-                    if opt:  # Only for training
+                    if m == 'train':
                         loss.backward()
                         opt.step()
-
-                    if m == 'val':
+                        if args.scheduler != 'plateau':
+                            scheduler.step()
+                    elif m == 'val':
                         with warnings.catch_warnings():
                             warnings.filterwarnings('ignore', category=UserWarning)
                             predicted_class: Tensor = probs2class(pred_probs)
@@ -259,7 +267,7 @@ def runTraining(args):
         np.save(args.dest / "dice_val.npy", log_dice_val)
 
         current_dice: float = log_dice_val[e, :, 1:].mean().item()
-        if args.scheduler:
+        if args.scheduler == 'plateau':
             scheduler.step(current_dice)
         if current_dice > best_dice:
             message = f">>> Improved dice at epoch {e}: {best_dice:05.3f}->{current_dice:05.3f} DSC"
@@ -301,7 +309,7 @@ def main():
     parser.add_argument('--lr', default=0.0005, type=float)
     parser.add_argument('--loss', default='CE', choices=['CE', 'DICE', 'DICE2', 'GENDICE', 'FOCAL', 'C1', 'C2', 'C3'])
     parser.add_argument('--optimizer', default='Adam', choices=['Adam', 'SGD', 'AdamW', 'SGDm'])
-    parser.add_argument('--scheduler', default=False, type=bool)
+    parser.add_argument('--scheduler', default='constant', choices=['constant', 'plateau', 'cyclic'])
     args = parser.parse_args()
     pprint(args)
 
