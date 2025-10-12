@@ -151,7 +151,7 @@ class GeneralizedDiceLoss:
 class FocalLoss:
     def __init__(self, alpha=None, gamma=2.0, eps=1e-10):
         if alpha is None:
-            alpha = [1.81959727e-04, 3.77735613e-01, 2.33023099e-02, 5.09826454e-01, 8.89536640e-02]
+            alpha = [0.05, 0.45, 0.05, 0.15, 0.3]
 
         self.alpha = torch.tensor(alpha, dtype=torch.float32)
         self.gamma = gamma
