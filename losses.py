@@ -331,7 +331,7 @@ class ComboLoss3:
     def __init__(self, alpha=0.5, **kwargs):
         self.alpha = alpha
 
-        self.loss1 = FocalLoss(**kwargs)
+        self.loss1 = FocalLoss()
         self.loss2 = DiceLoss()
 
     def __call__(self, pred_softmax, weak_target):
