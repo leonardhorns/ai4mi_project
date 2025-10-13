@@ -51,7 +51,7 @@ from utils import (Dcm,
                    dice_coef,
                    save_images)
 
-from losses import (CrossEntropy, DiceLoss, DiceLoss2, GeneralizedDiceLoss, FocalLoss, ComboLoss1)
+from losses import (CrossEntropy, DiceLoss, DiceLoss2, GeneralizedDiceLoss, FocalLoss, ComboLoss1, ComboLoss2, ComboLoss3)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -102,7 +102,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
         case 'SGDm':
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, nesterov=False)
 
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
     # Dataset part
     B: int = args.batch_size or datasets_params[args.dataset]['B']
@@ -165,9 +165,13 @@ def runTraining(args):
         case 'C1':
             loss_fn = ComboLoss1(idk=list(range(K)))
         case 'C2':
-            loss_fn = ComboLoss1(idk=list(range(K)))
+            loss_fn = ComboLoss2()
         case 'C3':
-            loss_fn = ComboLoss1(idk=list(range(K)))
+            loss_fn = ComboLoss3()
+        # case 'C4':
+        #     loss_fn = ComboLoss4()
+        # case 'C5':
+        #     loss_fn = ComboLoss5()
 
 
     # Notice one has the length of the _loader_, and the other one of the _dataset_
