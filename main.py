@@ -135,7 +135,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
                            gt_transform=partial(gt_transform, K),
                            augment = False,
                            debug=args.debug,
-                           use_every=1)
+                           use_every=2 if args.view != 'axial' and not args.predict else 1)
     val_loader = DataLoader(val_set,
                             batch_size=B,
                             num_workers=5,
@@ -286,6 +286,70 @@ def runTraining(args):
         rmtree(args.dest / f"iter{e:03d}" / "val_probs")
 
 
+def setup_test(args):
+    gpu: bool = args.gpu and torch.cuda.is_available()
+    device = torch.device("cuda") if gpu else torch.device("cpu")
+    print(f">> Picked {device} to run experiments")
+
+    K: int = datasets_params[args.dataset]['K']
+    B: int = args.batch_size or datasets_params[args.dataset]['B']
+
+    root_dir = Path("data") / args.dataset
+    if args.view != 'axial':
+        root_dir /= args.view
+
+    test_set = SliceDataset('test',
+                           root_dir,
+                           img_transform=img_transform,
+                           gt_transform=partial(gt_transform, K),
+                           augment=False,
+                           debug=args.debug,
+                           use_every=1)
+    data_loader = DataLoader(test_set,
+                            batch_size=B,
+                            num_workers=5,
+                            shuffle=False)
+
+    args.dest.mkdir(parents=True, exist_ok=True)
+
+    return device, data_loader, K
+
+def predict(args):
+    model = torch.load(args.dest / "bestmodel.pkl", weights_only=False)
+    model.eval()
+    
+    dest_dir = args.dest
+    if args.test:
+        print(">>> Running prediction on the test set")
+        device, val_loader, K = setup_test(args)
+        dest_dir /= 'test'
+    else:
+        _, _, _, device, _, val_loader, K = setup(args)
+    
+    model.to(device)
+    with torch.no_grad():
+        tq_iter = tqdm_(enumerate(val_loader), total=len(val_loader), desc=">> Prediction")
+        for i, data in tq_iter:
+            img = data['images'].to(device)
+            # gt = data['gts'].to(device)
+
+            assert 0 <= img.min() and img.max() <= 1
+            B, _, W, H = img.shape
+
+            pred_logits = model(img)
+            pred_probs = F.softmax(1 * pred_logits, dim=1)  # 1 is the temperature parameter
+
+            predicted_class: Tensor = probs2class(pred_probs)
+            mult: int = 63 if K == 5 else (255 / (K - 1))
+            save_images(predicted_class * mult,
+                        data['stems'],
+                        dest_dir / f"predictions")
+            for b in range(B):
+                path = dest_dir / f"predictions_probs" / f"{data['stems'][b]}.npy"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, pred_probs[b].cpu().numpy())
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -294,6 +358,10 @@ def main():
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
+    parser.add_argument('--predict', action='store_true',
+                        help="If set, will only run the prediction part (no training).")
+    parser.add_argument('--test', action='store_true',
+                        help="If set, will run on the test set instead of the validation set.")
 
     parser.add_argument('--gpu', action='store_true')
     parser.add_argument('--debug', action='store_true',
@@ -301,7 +369,7 @@ def main():
                              "to test the logics around epochs and logging easily.")
     parser.add_argument('--augment', action='store_true',help="Enable data augmentation during training.")
     view_options = ['axial', 'sagittal', 'coronal']
-    parser.add_argument('--views', default='axial', type=str, nargs='+', choices=view_options,
+    parser.add_argument('--views', default=['axial'], type=str, nargs='+', choices=view_options,
                         help="Train separate 2D networks for each specified view.")
     parser.add_argument('--batch_size', type=int)
 
@@ -316,9 +384,16 @@ def main():
 
     base_dest = args.dest
     for view in args.views:
-        print(f">>> Training {view} view")
         args.view = view
         args.dest = base_dest if args.view == 'axial' else base_dest.with_name(f"{base_dest.name}_{args.view}")
+        if args.predict:
+            predict(args)
+            continue
+        
+        if args.dest.exists() and any(args.dest.iterdir()):
+            raise FileExistsError(f"Destination dir {args.dest} already exists and is not empty "
+                                  f"Pick an empty folder or use --predict to run inference only")
+        print(f">>> Training {view} view")
         print("Saving to", args.dest)
         runTraining(args)
 
