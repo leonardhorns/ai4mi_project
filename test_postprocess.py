@@ -9,19 +9,19 @@ def main(args):
 
     src_folder = args.src_folder
     dest_folder = args.dest_folder
+
+    threshold = {}
     if args.threshold is not None:
         if args.threshold == - 1:
             threshold = {
-                3: 20,
-                4: 20
+                3: 500,
+                4: 500
             }
         else:
             threshold = {
                 cls: args.threshold
                 for cls in range(1, 5) if args.threshold > 0
             }
-    else:
-        threshold = None
 
     os.makedirs(dest_folder, exist_ok=True)
 
