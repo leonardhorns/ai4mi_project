@@ -36,7 +36,7 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from torchvision import transforms
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, ConstantLR, CyclicLR
 
 from functools import partial 
 
@@ -102,7 +102,13 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
         case 'SGDm':
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, nesterov=False)
 
-    scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+    match args.scheduler:
+        case 'constant':
+            scheduler = ConstantLR(optimizer=optimizer, factor=1)  # Dummy scheduler, does nothing
+        case 'cyclic':
+            scheduler = CyclicLR(optimizer, base_lr=lr/10, max_lr=lr*4, step_size_up=1600, mode='triangular2')
+        case 'plateau':
+            scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
 
     # Dataset part
     B: int = args.batch_size or datasets_params[args.dataset]['B']
@@ -117,7 +123,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
                              gt_transform= partial(gt_transform, K),
                              augment = args.augment,
                              debug=args.debug,
-                             use_every=3 if args.view != 'axial' else 1)
+                             use_every=2 if args.view != 'axial' else 1)
     train_loader = DataLoader(train_set,
                               batch_size=B,
                               num_workers=5,
@@ -129,7 +135,7 @@ def setup(args) -> tuple[nn.Module, Any, Any, Any, DataLoader, DataLoader, int]:
                            gt_transform=partial(gt_transform, K),
                            augment = False,
                            debug=args.debug,
-                           use_every=1)
+                           use_every=2 if args.view != 'axial' and not args.predict else 1)
     val_loader = DataLoader(val_set,
                             batch_size=B,
                             num_workers=5,
@@ -179,6 +185,7 @@ def runTraining(args):
     log_dice_tra: Tensor = torch.zeros((args.epochs, len(train_loader.dataset), K))
     log_loss_val: Tensor = torch.zeros((args.epochs, len(val_loader)))
     log_dice_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset), K))
+    log_lr: Tensor = torch.zeros((args.epochs, len(train_loader)))
 
     best_dice: float = 0
 
@@ -226,11 +233,12 @@ def runTraining(args):
                     loss = loss_fn(pred_probs, gt)
                     log_loss[e, i] = loss.item()  # One loss value per batch (averaged in the loss)
 
-                    if opt:  # Only for training
+                    if m == 'train':
                         loss.backward()
                         opt.step()
-
-                    if m == 'val':
+                        if args.scheduler != 'plateau':
+                            scheduler.step()
+                    elif m == 'val':
                         with warnings.catch_warnings():
                             warnings.filterwarnings('ignore', category=UserWarning)
                             predicted_class: Tensor = probs2class(pred_probs)
@@ -259,7 +267,7 @@ def runTraining(args):
         np.save(args.dest / "dice_val.npy", log_dice_val)
 
         current_dice: float = log_dice_val[e, :, 1:].mean().item()
-        if args.scheduler:
+        if args.scheduler == 'plateau':
             scheduler.step(current_dice)
         if current_dice > best_dice:
             message = f">>> Improved dice at epoch {e}: {best_dice:05.3f}->{current_dice:05.3f} DSC"
@@ -278,6 +286,70 @@ def runTraining(args):
         rmtree(args.dest / f"iter{e:03d}" / "val_probs")
 
 
+def setup_test(args):
+    gpu: bool = args.gpu and torch.cuda.is_available()
+    device = torch.device("cuda") if gpu else torch.device("cpu")
+    print(f">> Picked {device} to run experiments")
+
+    K: int = datasets_params[args.dataset]['K']
+    B: int = args.batch_size or datasets_params[args.dataset]['B']
+
+    root_dir = Path("data") / args.dataset
+    if args.view != 'axial':
+        root_dir /= args.view
+
+    test_set = SliceDataset('test',
+                           root_dir,
+                           img_transform=img_transform,
+                           gt_transform=partial(gt_transform, K),
+                           augment=False,
+                           debug=args.debug,
+                           use_every=1)
+    data_loader = DataLoader(test_set,
+                            batch_size=B,
+                            num_workers=5,
+                            shuffle=False)
+
+    args.dest.mkdir(parents=True, exist_ok=True)
+
+    return device, data_loader, K
+
+def predict(args):
+    model = torch.load(args.dest / "bestmodel.pkl", weights_only=False)
+    model.eval()
+    
+    dest_dir = args.dest
+    if args.test:
+        print(">>> Running prediction on the test set")
+        device, val_loader, K = setup_test(args)
+        dest_dir /= 'test'
+    else:
+        _, _, _, device, _, val_loader, K = setup(args)
+    
+    model.to(device)
+    with torch.no_grad():
+        tq_iter = tqdm_(enumerate(val_loader), total=len(val_loader), desc=">> Prediction")
+        for i, data in tq_iter:
+            img = data['images'].to(device)
+            # gt = data['gts'].to(device)
+
+            assert 0 <= img.min() and img.max() <= 1
+            B, _, W, H = img.shape
+
+            pred_logits = model(img)
+            pred_probs = F.softmax(1 * pred_logits, dim=1)  # 1 is the temperature parameter
+
+            predicted_class: Tensor = probs2class(pred_probs)
+            mult: int = 63 if K == 5 else (255 / (K - 1))
+            save_images(predicted_class * mult,
+                        data['stems'],
+                        dest_dir / f"predictions")
+            for b in range(B):
+                path = dest_dir / f"predictions_probs" / f"{data['stems'][b]}.npy"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, pred_probs[b].cpu().numpy())
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -286,14 +358,19 @@ def main():
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
+    parser.add_argument('--predict', action='store_true',
+                        help="If set, will only run the prediction part (no training).")
+    parser.add_argument('--test', action='store_true',
+                        help="If set, will run on the test set instead of the validation set.")
 
     parser.add_argument('--gpu', action='store_true')
     parser.add_argument('--debug', action='store_true',
                         help="Keep only a fraction (10 samples) of the datasets, "
                              "to test the logics around epochs and logging easily.")
     parser.add_argument('--augment', action='store_true',help="Enable data augmentation during training.")
-    parser.add_argument('--2.5D', action='store_true', dest='multi_view',
-                        help="Train separate 2D networks for each view (axial, coronal, sagittal).")
+    view_options = ['axial', 'sagittal', 'coronal']
+    parser.add_argument('--views', default=['axial'], type=str, nargs='+', choices=view_options,
+                        help="Train separate 2D networks for each specified view.")
     parser.add_argument('--batch_size', type=int)
 
 
@@ -301,27 +378,25 @@ def main():
     parser.add_argument('--lr', default=0.0005, type=float)
     parser.add_argument('--loss', default='CE', choices=['CE', 'DICE', 'DICE2', 'GENDICE', 'FOCAL', 'C1', 'C2', 'C3'])
     parser.add_argument('--optimizer', default='Adam', choices=['Adam', 'SGD', 'AdamW', 'SGDm'])
-    parser.add_argument('--scheduler', default=False, type=bool)
+    parser.add_argument('--scheduler', default='constant', choices=['constant', 'plateau', 'cyclic'])
     args = parser.parse_args()
     pprint(args)
 
-    args.view = 'axial'  # Default view
-    runTraining(args)
-
-    if args.multi_view:
-        base_dest = args.dest
-
-        print(">>> Training sagittal view")
-        args.view = 'sagittal'
-        args.dest = base_dest.with_name(f"{base_dest.name}_{args.view}")
+    base_dest = args.dest
+    for view in args.views:
+        args.view = view
+        args.dest = base_dest if args.view == 'axial' else base_dest.with_name(f"{base_dest.name}_{args.view}")
+        if args.predict:
+            predict(args)
+            continue
+        
+        if args.dest.exists() and any(args.dest.iterdir()):
+            raise FileExistsError(f"Destination dir {args.dest} already exists and is not empty "
+                                  f"Pick an empty folder or use --predict to run inference only")
+        print(f">>> Training {view} view")
         print("Saving to", args.dest)
         runTraining(args)
 
-        print(">>> Training coronal view")
-        args.view = 'coronal'
-        args.dest = base_dest.with_name(f"{base_dest.name}_{args.view}")
-        print("Saving to", args.dest)
-        runTraining(args)
 
 if __name__ == '__main__':
     main()
