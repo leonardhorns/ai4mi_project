@@ -27,6 +27,7 @@ import torch
 from torch import einsum
 from utils import simplex, sset
 
+
 class CrossEntropy():
     def __init__(self, **kwargs):
         # Self.idk is used to filter out some classes of the target mask. Use fancy indexing
@@ -118,6 +119,9 @@ class DiceLoss3:
 class GeneralizedDiceLoss:
     def __init__(self, smooth=1e-10):
         self.smooth = smooth
+        self.alpha = [1.81959727e-04, 3.77735613e-01, 2.33023099e-02, 5.09826454e-01, 8.89536640e-02]
+        self.weights = torch.tensor(self.alpha, dtype=torch.float32).view(1, len(self.alpha))
+
 
     def __call__(self, pred_softmax, target_onehot):
         assert pred_softmax.shape == target_onehot.shape
@@ -126,17 +130,20 @@ class GeneralizedDiceLoss:
         p = pred_softmax.reshape(B, K, -1)
         g = target_onehot.reshape(B, K, -1)
 
-        class_volumes = g.sum(dim=2)  # (B, K)
-        weights = 1.0 / (class_volumes ** 2 + self.smooth)
-        weights = weights / (weights.sum(dim=1, keepdim=True) + self.smooth)
+        # class_volumes = g.sum(dim=2)  # (B, K)
+        # class_volumes = torch.clamp(class_volumes, min=1.0)
+        # weights = 1.0 / (class_volumes ** 2 + self.smooth)
+        # weights = weights / (weights.sum(dim=1, keepdim=True) + self.smooth)
 
         intersection = (p * g).sum(dim=2)
-        denominator = (p + g).sum(dim=2)
+        denom = p.sum(dim=2) + g.sum(dim=2)
 
-        numerator = 2 * (weights * intersection).sum(dim=1)
-        denom = (weights * denominator).sum(dim=1)
+        if self.weights.device != pred_softmax.device:
+            self.weights = self.weights.to(pred_softmax.device)
+        numerator = 2 * (self.weights * intersection).sum(dim=1)
+        denominator = (self.weights * denom).sum(dim=1)
 
-        dice = (numerator + self.smooth) / (denom + self.smooth)
+        dice = (numerator + self.smooth) / (denominator + self.smooth)
         loss = 1.0 - dice.mean()
         return loss
 
@@ -177,6 +184,117 @@ class FocalLoss:
 
         loss = loss_map.sum(dim=(1, 2, 3)).mean()
         return loss
+
+
+# class HausdorffLoss:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         self.loss = losses.HausdorffDTLoss()
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         loss = self.loss(pred_softmax, weak_target)
+#         return loss
+#
+#
+# class Focal2:
+#     def __init__(self, alpha=None, **kwargs):
+#         if alpha is None:
+#             self.alpha = [1.81959727e-04, 3.77735613e-01, 2.33023099e-02, 5.09826454e-01, 8.89536640e-02]
+#         else:
+#             self.alpha = alpha
+#
+#         self.loss = losses.FocalLoss(alpha=self.alpha)
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         loss = self.loss(pred_softmax, weak_target)
+#         return loss
+#
+#
+# class GenDice2:
+#     def __init__(self, **kwargs):
+#         self.loss = losses.GeneralizedDiceLoss()
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         loss = self.loss(pred_softmax, weak_target)
+#         return loss
+#
+#
+# class TverskyLoss:
+#     def __init__(self, **kwargs):
+#         self.loss = losses.TverskyLoss()
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         loss = self.loss(pred_softmax, weak_target)
+#         return loss
+
+
+# class ComboLoss2:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         print("hello!")
+#         self.alpha = alpha
+#
+#         self.loss1 = FocalLoss(**kwargs)
+#         self.loss2 = GenDice2(**kwargs)
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         task1 = self.loss1(pred_softmax, weak_target)
+#         task2 = self.loss2(pred_softmax, weak_target)
+#
+#         return self.alpha * task1 + (1 - self.alpha) * task2
+#
+#
+# class ComboLoss3:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         self.alpha = alpha
+#
+#         self.loss1 = FocalLoss(**kwargs)
+#         self.loss2 = HausdorffLoss(**kwargs)
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         task1 = self.loss1(pred_softmax, weak_target)
+#         task2 = self.loss2(pred_softmax, weak_target)
+#
+#         return self.alpha * task1 + (1 - self.alpha) * task2
+#
+#
+# class ComboLoss4:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         self.alpha = alpha
+#
+#         self.loss1 = FocalLoss(**kwargs)
+#         self.loss2 = TverskyLoss(**kwargs)
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         task1 = self.loss1(pred_softmax, weak_target)
+#         task2 = self.loss2(pred_softmax, weak_target)
+#
+#         return self.alpha * task1 + (1 - self.alpha) * task2
+#
+#
+# class ComboLoss5:
+#     def __init__(self, alpha=None, **kwargs):
+#         if alpha is None:
+#             self.alpha = [0.5, 0.3, 0.2]
+#         else:
+#             self.alpha = alpha
+#         print("hello!")
+#         self.loss1 = FocalLoss(**kwargs)
+#         self.loss2 = TverskyLoss(**kwargs)
+#         self.loss3 = GenDice2(**kwargs)
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         task1 = self.loss1(pred_softmax, weak_target)
+#         task2 = self.loss2(pred_softmax, weak_target)
+#         task3 = self.loss3(pred_softmax, weak_target)
+#
+#         return self.alpha[0] * task1 + self.alpha[1] * task2 + self.alpha[2] * task3
 
 
 class ComboLoss1:
@@ -224,31 +342,32 @@ class ComboLoss3:
         return self.alpha * task1 + (1 - self.alpha) * task2
 
 
-class ComboLoss4:
-    def __init__(self, alpha=0.5, **kwargs):
-        self.alpha = alpha
-
-        self.loss1 = CrossEntropy(**kwargs)
-        self.loss2 = GeneralizedDiceLoss()
-
-    def __call__(self, pred_softmax, weak_target):
-        assert pred_softmax.shape == weak_target.shape, "Shapes must match"
-        task1 = self.loss1(pred_softmax, weak_target)
-        task2 = self.loss2(pred_softmax, weak_target)
-
-        return self.alpha * task1 + (1 - self.alpha) * task2
-
-
-class ComboLoss5:
-    def __init__(self, alpha=0.5, **kwargs):
-        self.alpha = alpha
-
-        self.loss1 = FocalLoss(**kwargs)
-        self.loss2 = GeneralizedDiceLoss()
-
-    def __call__(self, pred_softmax, weak_target):
-        assert pred_softmax.shape == weak_target.shape, "Shapes must match"
-        task1 = self.loss1(pred_softmax, weak_target)
-        task2 = self.loss2(pred_softmax, weak_target)
-
-        return self.alpha * task1 + (1 - self.alpha) * task2
+# class ComboLoss4:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         self.alpha = alpha
+#
+#         self.loss1 = CrossEntropy(**kwargs)
+#         self.loss2 = GeneralizedDiceLoss()
+#         self.loss = losses.HausdorffDTLoss()
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         # task1 = self.loss1(pred_softmax, weak_target)
+#         # task2 = self.loss2(pred_softmax, weak_target)
+#         loss = self.loss(pred_softmax, weak_target)
+#         return loss
+#
+#
+# class ComboLoss5:
+#     def __init__(self, alpha=0.5, **kwargs):
+#         self.alpha = alpha
+#
+#         self.loss1 = FocalLoss(**kwargs)
+#         self.loss2 = GeneralizedDiceLoss()
+#
+#     def __call__(self, pred_softmax, weak_target):
+#         assert pred_softmax.shape == weak_target.shape, "Shapes must match"
+#         task1 = self.loss1(pred_softmax, weak_target)
+#         task2 = self.loss2(pred_softmax, weak_target)
+#
+#         return self.alpha * task1 + (1 - self.alpha) * task2
