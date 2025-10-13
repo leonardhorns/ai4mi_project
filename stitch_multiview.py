@@ -6,13 +6,14 @@ import nibabel as nib
 import numpy as np
 import skimage.transform
 from tqdm import tqdm
+from pprint import pprint
 
 parser = argparse.ArgumentParser(description="Stitch predicted 2D segmentation class probabilities back into 3D volumes.")
 parser.add_argument("--data_folders", type=str, nargs='+', required=True, help="Directory containing the 2D slices of predicted probabilities.")
 parser.add_argument("--views", type=str, nargs='+', required=True, help="Views of data_folders (in the same order). Options: axial, sagittal, coronal.")
 parser.add_argument("--dest_folder", type=str, required=True, help="Directory to save the stitched 3D volumes.")
 parser.add_argument("--grp_regex", type=str, required=True, help="Regex pattern to group slices into volumes, containing a capturing group for the patient id.")
-parser.add_argument("--source_scan_pattern", type=str, required=True, help="Pattern to identify source scans, containing '{id_}' as a placeholder for the patient id from the regex.")
+parser.add_argument("--source_scan_pattern", type=str, default=None, help="Pattern to identify source scans, containing '{id_}' as a placeholder for the patient id from the regex.")
 
 
 view_axes = {
@@ -24,8 +25,8 @@ view_axes = {
 def drop_idx(t: tuple, idx: int) -> tuple:
     return t[:idx] + t[idx+1:]
 
-if __name__ == "__main__":
-    args = parser.parse_args()
+
+def main(args):
     data_base_paths = args.data_folders
     for path in data_base_paths:
         if not os.path.isdir(path):
@@ -45,24 +46,47 @@ if __name__ == "__main__":
     dest_base_path = args.dest_folder
     os.makedirs(dest_base_path, exist_ok=True)
     
+    stitch_axes = [view_axes[v] for v in args.views]
     for patient_id in tqdm(patient_ids):
-        gt_path = args.source_scan_pattern.replace("{id_}", patient_id)
-        gt = nib.load(gt_path)
-        gt_shape = gt.get_fdata().shape
+        affine, header = None, None
+        first_folder_files = sorted(patient_predictions[0][patient_id])
+        first_pred_path = os.path.join(data_base_paths[0], first_folder_files[0])
+        n_classes = int(np.load(first_pred_path, allow_pickle=False).shape[0])
         
-        view_probs = []
-        stitch_axes = (view_axes[v] for v in args.views)
+        if args.source_scan_pattern is not None:
+            gt_path = args.source_scan_pattern.replace("{id_}", patient_id)
+            gt = nib.load(gt_path)
+            gt_shape = gt.get_fdata().shape
+            affine, header = gt.affine, gt.header
+        else:
+            gt_shape = [0, 0, 0]
+            dims = (len(prediction_dict[patient_id]) for prediction_dict in patient_predictions)
+            for dim, axis in zip(dims, stitch_axes):
+                gt_shape[axis] = dim
+            gt_shape = tuple(gt_shape)
+        
+        stitched = np.zeros((n_classes,) + gt_shape, dtype=np.float32)
         for data_base_path, prediction_dict, stitch_axis in zip(data_base_paths, patient_predictions, stitch_axes):
             prediction_slice_names = prediction_dict[patient_id]
             prediction_paths = (os.path.join(data_base_path, f) for f in sorted(prediction_slice_names))
-            predictions = (np.load(p) for p in prediction_paths)
-            stitched = np.stack(list(predictions), axis=stitch_axis + 1) # dimension 0 is prediction class
-            stitched = skimage.transform.resize(stitched, (stitched.shape[0],) + gt_shape, order=0, preserve_range=True, anti_aliasing=False)
-            view_probs.append(stitched)
+            
+            for i, p in enumerate(prediction_paths):
+                sl = np.load(p, allow_pickle=False).astype(np.float32)
+                sl = skimage.transform.resize(sl, drop_idx(stitched.shape, stitch_axis+1), order=1, preserve_range=True, anti_aliasing=False).astype(np.float32)
+                if stitch_axis == 0:
+                    stitched[:, i, :, :] += sl
+                elif stitch_axis == 1:
+                    stitched[:, :, i, :] += sl
+                else:
+                    stitched[:, :, :, i] += sl
         
-        combined_probs = np.mean(np.stack(view_probs, axis=0), axis=0)
-        combined_preds = combined_probs.argmax(axis=0).astype(np.uint8)
-        # combined_preds = (skimage.transform.resize(combined_preds, gt_shape, order=0, preserve_range=True, anti_aliasing=False)).astype(np.uint8)
-        prediction_nii = nib.Nifti1Image(combined_preds, gt.affine, gt.header)
+        combined_preds = stitched.argmax(axis=0).astype(np.uint8)
+        prediction_nii = nib.Nifti1Image(combined_preds, affine, header)
         dest_path = os.path.join(dest_base_path, f"{patient_id}.nii.gz")
         nib.save(prediction_nii, dest_path)
+
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+    pprint(args)
+    main(args)
