@@ -39,8 +39,15 @@ from skimage.transform import resize
 from utils import map_, tqdm_
 
 
-def norm_arr(img: np.ndarray) -> np.ndarray:
+def norm_arr(img: np.ndarray, min_clip=None, max_clip=None) -> np.ndarray:
+    if min_clip is None:
+        min_clip = img.min()
+    if max_clip is None:
+        max_clip = img.max()
+    
     casted = img.astype(np.float32)
+    casted = np.clip(casted, min_clip, max_clip)
+    
     shifted = casted - casted.min()
     norm = shifted / shifted.max()
     res = 255 * norm
@@ -80,6 +87,31 @@ def sanity_gt(gt, ct) -> bool:
 resize_: Callable = partial(resize, mode="constant", preserve_range=True, anti_aliasing=False)
 
 
+def _slice(ct, gt, id_, dest_path: Path, shape: tuple[int, int]):
+    for idx in range(ct.shape[0]):
+        img_slice = resize_(ct[idx, :, :], shape).astype(np.uint8)
+        gt_slice = resize_(gt[idx, :, :], shape, order=0).astype(np.uint8)
+        assert img_slice.shape == gt_slice.shape
+        gt_slice *= 63
+        assert gt_slice.dtype == np.uint8, gt_slice.dtype
+        # assert set(np.unique(gt_slice)) <= set(range(5))
+        assert set(np.unique(gt_slice)) <= set([0, 63, 126, 189, 252]), np.unique(gt_slice)
+
+        arrays: list[np.ndarray] = [img_slice, gt_slice]
+
+        subfolders: list[str] = ["img", "gt"]
+        assert len(arrays) == len(subfolders)
+        for save_subfolder, data in zip(subfolders,
+                                        arrays):
+            filename = f"{id_}_{idx:04d}.png"
+
+            save_path: Path = Path(dest_path, save_subfolder)
+            save_path.mkdir(parents=True, exist_ok=True)
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                imsave(str(save_path / filename), data)
+
 def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int, int],
                   test_mode: bool = False) -> tuple[float, float, float]:
     id_path: Path = source_path / ("train" if not test_mode else "test") / id_
@@ -103,34 +135,13 @@ def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int
     else:
         gt = np.zeros_like(ct, dtype=np.uint8)
 
-    norm_ct: np.ndarray = norm_arr(ct)
+    norm_ct: np.ndarray = norm_arr(ct, min_clip=-1000, max_clip=1000)
 
-    to_slice_ct = norm_ct
-    to_slice_gt = gt
-
-    for idz in range(z):
-        img_slice = resize_(to_slice_ct[:, :, idz], shape).astype(np.uint8)
-        gt_slice = resize_(to_slice_gt[:, :, idz], shape, order=0).astype(np.uint8)
-        assert img_slice.shape == gt_slice.shape
-        gt_slice *= 63
-        assert gt_slice.dtype == np.uint8, gt_slice.dtype
-        # assert set(np.unique(gt_slice)) <= set(range(5))
-        assert set(np.unique(gt_slice)) <= set([0, 63, 126, 189, 252]), np.unique(gt_slice)
-
-        arrays: list[np.ndarray] = [img_slice, gt_slice]
-
-        subfolders: list[str] = ["img", "gt"]
-        assert len(arrays) == len(subfolders)
-        for save_subfolder, data in zip(subfolders,
-                                        arrays):
-            filename = f"{id_}_{idz:04d}.png"
-
-            save_path: Path = Path(dest_path, save_subfolder)
-            save_path.mkdir(parents=True, exist_ok=True)
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                imsave(str(save_path / filename), data)
+    dest_path_x = dest_path.parent / "sagittal" / dest_path.name
+    dest_path_y = dest_path.parent / "coronal" / dest_path.name
+    _slice(norm_ct, gt, id_, dest_path_x, shape)
+    _slice(norm_ct.transpose(1, 0, 2), gt.transpose(1, 0, 2), id_, dest_path_y, shape)
+    _slice(norm_ct.transpose(2, 0, 1), gt.transpose(2, 0, 1), id_, dest_path, shape)
 
     return dx, dy, dz
 
